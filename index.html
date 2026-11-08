@@ -73,13 +73,30 @@
   .leaflet-container { font: inherit; }
   .leaflet-tooltip { background: var(--panel); color: var(--ink); border-color: var(--line); }
 
+  .sheet-handle { display: none; flex-direction: column; align-items: center; gap: 4px; width: 100%;
+    padding: 8px 0 4px; background: none; border: 0; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+  .sheet-handle .bar { width: 38px; height: 4px; border-radius: 2px; background: var(--muted); opacity: .5; }
+  .sheet-handle .label { display: none; }
+
+  /* Phones: the panel becomes a bottom sheet that expands to full screen when you scroll the list */
   @media (max-width: 800px) {
-    .app { grid-template-columns: 1fr; grid-template-rows: 55vh 45vh; }
-    aside { border-left: 0; border-top: 1px solid var(--line); }
-    .panel-head { padding: 14px 16px 10px; }
+    .app { grid-template-columns: 1fr; height: 100vh; height: 100dvh; }
+    aside { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000; height: 45vh; height: 45dvh;
+      border-left: 0; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0;
+      box-shadow: 0 -4px 16px rgba(0,0,0,.18); transition: height .25s ease, border-radius .25s ease; }
+    body.sheet-open aside { height: 100vh; height: 100dvh; border-radius: 0; }
+    .sheet-handle { display: flex; }
+    body.sheet-open .sheet-handle .label { display: inline; }
+    .panel-head { padding: 2px 16px 10px; touch-action: none; }
+    .panel-head h2 { font-size: 22px; }
+    .filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-top: 8px; touch-action: pan-x; }
+    .filters::-webkit-scrollbar { display: none; }
+    .chip { flex: none; }
+    .filter-text { margin-top: 8px; font-size: 16px; } /* 16px stops iOS zooming in on focus */
     .item { padding: 10px 16px; }
+    body:not(.sheet-open) .credit { display: none; }
     header.brand h1 { font-size: 18px; }
-    .legend { display: none; }
+    .legend, .leaflet-control-zoom { display: none; }
   }
 </style>
 </head>
@@ -100,7 +117,10 @@
       <div class="bar-labels"><span>1</span><span>10</span><span>100</span><span>1000+</span></div>
     </div>
   </div>
-  <aside>
+  <aside id="sheet">
+    <button class="sheet-handle" id="sheet-handle" aria-label="Expand or collapse list">
+      <span class="bar"></span><span class="label">Back to map</span>
+    </button>
     <div class="panel-head" id="panel-head">
       <h2>Pick a country</h2>
       <div class="sub">Click any country on the map to see its news outlets.</div>
@@ -200,7 +220,10 @@ function selectCountry(id, name, l, fly) {
   selected = l;
   l.setStyle({ weight: 2.5, color: css("--sel") });
   l.bringToFront();
-  if (fly) map.flyToBounds(l.getBounds(), { maxZoom: 5, duration: 0.8 });
+  setSheetOpen(false);
+  // On phones, keep the country centred in the part of the map not covered by the sheet
+  const sheetPad = phone.matches ? document.getElementById("sheet").offsetHeight : 0;
+  if (fly) map.flyToBounds(l.getBounds(), { maxZoom: 5, duration: 0.8, paddingBottomRight: [0, sheetPad] });
   Object.assign(state, { id, name, cat: null, text: "" });
   history.replaceState(null, "", "#" + encodeURIComponent(name));
   renderPanel();
@@ -228,7 +251,10 @@ function renderPanel() {
       <input class="filter-text" id="filter-text" type="search" placeholder="Filter by name, city or language…" value="${esc(state.text)}">` : ""}`;
   document.querySelectorAll(".chip").forEach((b) => b.onclick = () => { state.cat = b.dataset.cat || null; renderPanel(); });
   const ft = document.getElementById("filter-text");
-  if (ft) ft.oninput = () => { state.text = ft.value; renderList(); };
+  if (ft) {
+    ft.oninput = () => { state.text = ft.value; renderList(); };
+    ft.onfocus = () => setSheetOpen(true);
+  }
   renderList();
 }
 
@@ -260,6 +286,29 @@ function renderList() {
       </div>
     </div>`).join("");
 }
+
+// Phone bottom sheet: scrolling the list or swiping up opens it full screen; the handle or a swipe down closes it
+const phone = matchMedia("(max-width: 800px)");
+function setSheetOpen(open) {
+  document.body.classList.toggle("sheet-open", open && phone.matches);
+}
+document.getElementById("sheet-handle").onclick = () =>
+  setSheetOpen(!document.body.classList.contains("sheet-open"));
+document.getElementById("list").addEventListener("scroll", (e) => {
+  if (e.target.scrollTop > 8) setSheetOpen(true);
+}, { passive: true });
+let touchY = null;
+for (const el of [document.getElementById("sheet-handle"), document.getElementById("panel-head")]) {
+  el.addEventListener("touchstart", (e) => { touchY = e.touches[0].clientY; }, { passive: true });
+  el.addEventListener("touchend", (e) => {
+    if (touchY === null) return;
+    const dy = e.changedTouches[0].clientY - touchY;
+    if (dy < -30) setSheetOpen(true);
+    else if (dy > 30) setSheetOpen(false);
+    touchY = null;
+  }, { passive: true });
+}
+phone.addEventListener("change", () => setSheetOpen(false));
 
 // Country search box
 const input = document.getElementById("country-search");
