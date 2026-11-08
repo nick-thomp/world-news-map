@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World News Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --ocean: #dfe6ea;
+    --panel: #fffdf8;
+    --ink: #1d1d1b;
+    --muted: #6b6860;
+    --line: #e2ddd2;
+    --accent: #b3261e;
+    --land-empty: #e9e4d8;
+    --chip: #f0ebe0;
+    --sel: #1d1d1b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --ocean: #1c2226; --panel: #1b1b1a; --ink: #ecebe6; --muted: #9a978e;
+      --line: #2f2e2b; --accent: #ef6b5f; --land-empty: #2b2a27; --chip: #2a2926; --sel: #ffffff;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .app { display: grid; grid-template-columns: 1fr 400px; height: 100vh; }
+  #map { background: var(--ocean); }
+  header.brand { position: absolute; z-index: 500; top: 14px; left: 14px; right: 14px; max-width: 420px;
+    display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  header.brand h1 { margin: 0; font: 700 22px/1.1 Georgia, "Times New Roman", serif; letter-spacing: -.01em;
+    pointer-events: auto; }
+  header.brand h1 span { color: var(--accent); }
+  .search { position: relative; pointer-events: auto; }
+  .search input { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel); color: var(--ink); font: inherit; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  .search ul { position: absolute; top: 100%; left: 0; right: 0; margin: 4px 0 0; padding: 4px 0; list-style: none;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; max-height: 260px; overflow: auto; }
+  .search li { padding: 6px 12px; cursor: pointer; display: flex; justify-content: space-between; }
+  .search li:hover, .search li.active { background: var(--chip); }
+  .search li small { color: var(--muted); }
+  .legend { position: absolute; z-index: 500; left: 14px; bottom: 14px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--muted); }
+  .legend .bar { display: flex; gap: 2px; margin-top: 4px; }
+  .legend .bar i { width: 26px; height: 8px; display: block; }
+  .legend .bar-labels { display: flex; justify-content: space-between; }
+
+  aside { background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .panel-head { padding: 20px 20px 12px; border-bottom: 1px solid var(--line); }
+  .panel-head h2 { margin: 0 0 2px; font: 700 26px/1.15 Georgia, "Times New Roman", serif; }
+  .panel-head .sub { color: var(--muted); font-size: 13px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .chip { border: 1px solid var(--line); background: var(--chip); color: var(--ink); border-radius: 999px;
+    padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--sel); color: var(--panel); border-color: var(--sel); }
+  .filter-text { width: 100%; margin-top: 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; }
+  .list { overflow-y: auto; flex: 1; padding: 4px 0 20px; }
+  .item { padding: 11px 20px; border-bottom: 1px solid var(--line); }
+  .item a.name { color: var(--ink); font-weight: 600; text-decoration: none; }
+  .item a.name:hover { color: var(--accent); text-decoration: underline; }
+  .item .native { color: var(--muted); font-size: 13px; }
+  .item .meta { color: var(--muted); font-size: 12.5px; margin-top: 2px; display: flex; flex-wrap: wrap; gap: 0 8px; }
+  .item .meta .cat { color: var(--accent); font-weight: 600; }
+  .item .meta a { color: var(--muted); }
+  .empty { padding: 40px 24px; color: var(--muted); text-align: center; }
+  .empty h3 { font: 600 18px Georgia, serif; color: var(--ink); margin: 0 0 6px; }
+  .credit { padding: 8px 20px; font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--line); }
+  .credit a { color: var(--muted); }
+  .leaflet-container { font: inherit; }
+  .leaflet-tooltip { background: var(--panel); color: var(--ink); border-color: var(--line); }
+
+  @media (max-width: 800px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 55vh 45vh; }
+    aside { border-left: 0; border-top: 1px solid var(--line); }
+    .panel-head { padding: 14px 16px 10px; }
+    .item { padding: 10px 16px; }
+    header.brand h1 { font-size: 18px; }
+    .legend { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div style="position:relative">
+    <div id="map" style="position:absolute;inset:0"></div>
+    <header class="brand">
+      <h1>World <span>News</span> Map</h1>
+      <div class="search">
+        <input id="country-search" type="search" placeholder="Find a country… (e.g. Finland)" autocomplete="off">
+        <ul id="suggestions" hidden></ul>
+      </div>
+    </header>
+    <div class="legend">
+      Outlets listed
+      <div class="bar" id="legend-bar"></div>
+      <div class="bar-labels"><span>1</span><span>10</span><span>100</span><span>1000+</span></div>
+    </div>
+  </div>
+  <aside>
+    <div class="panel-head" id="panel-head">
+      <h2>Pick a country</h2>
+      <div class="sub">Click any country on the map to see its news outlets.</div>
+    </div>
+    <div class="list" id="list">
+      <div class="empty">
+        <h3>Local news, everywhere</h3>
+        Explore newspapers, news sites, agencies and broadcasters from around the world, then read them in their own words.
+      </div>
+    </div>
+    <div class="credit">
+      Outlet data: <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> (CC0) ·
+      Borders: <a href="https://www.naturalearthdata.com" target="_blank" rel="noopener">Natural Earth</a>
+    </div>
+  </aside>
+</div>
+
+<script src="data/news.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script>
+const DATA = window.NEWS_DATA || {};
+const CATS = ["Newspaper", "Online news", "News agency", "Magazine", "Broadcaster", "TV station"];
+const RAMP = ["#f6d5c7", "#efa98e", "#e07a5f", "#c4483a", "#8f1f1d"];
+
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const countFor = (id) => (DATA[id] || []).length;
+function colorFor(n) {
+  if (!n) return css("--land-empty");
+  const i = Math.min(RAMP.length - 1, Math.floor(Math.log10(n) * 1.4));
+  return RAMP[i];
+}
+document.getElementById("legend-bar").innerHTML = RAMP.map((c) => `<i style="background:${c}"></i>`).join("");
+
+const map = L.map("map", { worldCopyJump: true, minZoom: 2, maxZoom: 8, zoomSnap: 0.5, attributionControl: false })
+  .setView([30, 10], 2);
+map.zoomControl.setPosition("bottomright");
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const domain = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
+
+let layer, selected = null, countries = [];
+const state = { id: null, name: "", cat: null, text: "" };
+
+// Shapes like Russia and Fiji cross the 180° line; without this, Leaflet draws them as bands across the map.
+function unwrapAntimeridian(f) {
+  const g = f.geometry;
+  if (!g) return;
+  const polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
+  for (const poly of polys) for (const ring of poly) {
+    for (let i = 1; i < ring.length; i++) {
+      const d = ring[i][0] - ring[i - 1][0];
+      if (d > 180) ring[i][0] -= 360;
+      else if (d < -180) ring[i][0] += 360;
+    }
+  }
+  // Keep each country on the "near" side (e.g. Russia's far east continues past 180° instead of wrapping).
+  for (const poly of polys) {
+    const lons = poly[0].map((p) => p[0]);
+    const mid = (Math.min(...lons) + Math.max(...lons)) / 2;
+    if (mid < -180) poly.forEach((r) => r.forEach((p) => p[0] += 360));
+    else if (mid > 180 && f.id !== "643") poly.forEach((r) => r.forEach((p) => p[0] -= 360));
+  }
+}
+
+function baseStyle(f) {
+  return { fillColor: colorFor(countFor(f.id)), fillOpacity: 1, color: css("--panel"), weight: 0.6 };
+}
+
+fetch("https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json")
+  .then((r) => r.json())
+  .then((topo) => {
+    const geo = topojson.feature(topo, topo.objects.countries);
+    geo.features.forEach(unwrapAntimeridian);
+    layer = L.geoJSON(geo, {
+      style: baseStyle,
+      onEachFeature(f, l) {
+        countries.push({ id: f.id, name: f.properties.name, layer: l });
+        l.bindTooltip(() => `<b>${esc(f.properties.name)}</b><br>${countFor(f.id)} outlets`, { sticky: true });
+        l.on({
+          mouseover: () => { if (l !== selected) l.setStyle({ weight: 1.5, color: css("--ink") }); },
+          mouseout: () => { if (l !== selected) layer.resetStyle(l); },
+          click: () => selectCountry(f.id, f.properties.name, l, false),
+        });
+      },
+    }).addTo(map);
+    countries.sort((a, b) => a.name.localeCompare(b.name));
+    selectFromHash();
+  })
+  .catch(() => {
+    document.getElementById("list").innerHTML =
+      `<div class="empty"><h3>Map couldn't load</h3>Check your internet connection and refresh.</div>`;
+  });
+
+function selectCountry(id, name, l, fly) {
+  if (selected) layer.resetStyle(selected);
+  selected = l;
+  l.setStyle({ weight: 2.5, color: css("--sel") });
+  l.bringToFront();
+  if (fly) map.flyToBounds(l.getBounds(), { maxZoom: 5, duration: 0.8 });
+  Object.assign(state, { id, name, cat: null, text: "" });
+  history.replaceState(null, "", "#" + encodeURIComponent(name));
+  renderPanel();
+}
+
+// Shareable links: index.html#Finland opens that country
+function selectFromHash() {
+  const name = decodeURIComponent(location.hash.slice(1)).toLowerCase();
+  const c = name && countries.find((c) => c.name.toLowerCase() === name);
+  if (c) selectCountry(c.id, c.name, c.layer, true);
+}
+window.addEventListener("hashchange", selectFromHash);
+
+function renderPanel() {
+  const all = DATA[state.id] || [];
+  const counts = Object.fromEntries(CATS.map((c) => [c, all.filter((o) => o.c === c).length]));
+  const chips = [`<button class="chip" data-cat="" aria-pressed="${!state.cat}">All ${all.length}</button>`]
+    .concat(CATS.filter((c) => counts[c]).map((c) =>
+      `<button class="chip" data-cat="${c}" aria-pressed="${state.cat === c}">${c} ${counts[c]}</button>`))
+    .join("");
+  document.getElementById("panel-head").innerHTML = `
+    <h2>${esc(state.name)}</h2>
+    <div class="sub">${all.length ? `${all.length} news outlets listed` : "No outlets listed yet"}</div>
+    ${all.length ? `<div class="filters">${chips}</div>
+      <input class="filter-text" id="filter-text" type="search" placeholder="Filter by name, city or language…" value="${esc(state.text)}">` : ""}`;
+  document.querySelectorAll(".chip").forEach((b) => b.onclick = () => { state.cat = b.dataset.cat || null; renderPanel(); });
+  const ft = document.getElementById("filter-text");
+  if (ft) ft.oninput = () => { state.text = ft.value; renderList(); };
+  renderList();
+}
+
+function renderList() {
+  const all = DATA[state.id] || [];
+  const t = state.text.trim().toLowerCase();
+  const items = all.filter((o) => (!state.cat || o.c === state.cat) &&
+    (!t || [o.n, o.nn, o.p, o.l, o.u].some((v) => v && v.toLowerCase().includes(t))));
+  const list = document.getElementById("list");
+  list.scrollTop = 0;
+  if (!all.length) {
+    list.innerHTML = `<div class="empty"><h3>Nothing here yet</h3>
+      Wikidata doesn't list any outlets with a website for ${esc(state.name)}.
+      You can <a href="https://www.wikidata.org/wiki/Wikidata:Main_Page" target="_blank" rel="noopener">add some</a>
+      and they'll show up the next time the data is rebuilt.</div>`;
+    return;
+  }
+  if (!items.length) { list.innerHTML = `<div class="empty">No outlets match that filter.</div>`; return; }
+  list.innerHTML = items.map((o) => `
+    <div class="item">
+      <a class="name" href="${esc(o.u)}" target="_blank" rel="noopener">${esc(o.n)}</a>
+      ${o.nn ? `<div class="native">${esc(o.nn)}</div>` : ""}
+      <div class="meta">
+        <span class="cat">${esc(o.c)}</span>
+        ${o.p ? `<span>${esc(o.p)}</span>` : ""}
+        ${o.l ? `<span>${esc(o.l)}</span>` : ""}
+        <span>${esc(domain(o.u))}</span>
+        <a href="https://www.wikidata.org/wiki/${o.q}" target="_blank" rel="noopener" title="Source record">ⓘ</a>
+      </div>
+    </div>`).join("");
+}
+
+// Country search box
+const input = document.getElementById("country-search");
+const sugg = document.getElementById("suggestions");
+let matches = [], active = 0;
+function showSuggestions() {
+  const q = input.value.trim().toLowerCase();
+  matches = q ? countries.filter((c) => c.name.toLowerCase().includes(q))
+    .sort((a, b) => a.name.toLowerCase().startsWith(q) ? -1 : b.name.toLowerCase().startsWith(q) ? 1 : 0).slice(0, 8) : [];
+  active = 0;
+  sugg.hidden = !matches.length;
+  sugg.innerHTML = matches.map((c, i) =>
+    `<li data-i="${i}" class="${i === active ? "active" : ""}">${esc(c.name)} <small>${countFor(c.id)}</small></li>`).join("");
+}
+function pick(c) {
+  input.value = ""; sugg.hidden = true; input.blur();
+  selectCountry(c.id, c.name, c.layer, true);
+}
+input.oninput = showSuggestions;
+input.onkeydown = (e) => {
+  if (!matches.length) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    active = (active + (e.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length;
+    [...sugg.children].forEach((li, i) => li.classList.toggle("active", i === active));
+  } else if (e.key === "Enter") pick(matches[active]);
+  else if (e.key === "Escape") sugg.hidden = true;
+};
+sugg.onmousedown = (e) => { const li = e.target.closest("li"); if (li) pick(matches[+li.dataset.i]); };
+input.onblur = () => setTimeout(() => sugg.hidden = true, 100);
+</script>
+</body>
+</html>
